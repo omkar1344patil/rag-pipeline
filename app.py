@@ -241,6 +241,10 @@ with st.sidebar:
                             is_streamlit = os.environ.get("IS_STREAMLIT", "")
                         if is_streamlit:
                             st.error("❌ Git clone and run repo locally to use Local LLMs")
+                            st.session_state.rag = None
+                            st.session_state.documents_loaded = False
+
+
                     else:
                         st.session_state.llm_type = "local"
                         st.session_state.local_model = local_model
@@ -259,7 +263,9 @@ with st.sidebar:
 
             except Exception as e:
                 st.error(f"❌ {str(e)}")
-    
+                st.session_state.rag = None
+                st.session_state.documents_loaded = False
+                
     with tab3:
         st.header("ℹ️ About")
         st.markdown("""
