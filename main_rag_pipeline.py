@@ -141,7 +141,8 @@ class BaseRAG:
         system_prompt = (
             "Use the given context to answer the question. "
             "If you don't know the answer, say you don't know. "
-            "Be concise and accurate.\n\n"
+            "Don't assume anything."
+            "Be concise while using proper sentences and accurate. Show logic and brief explanation behind your reasoning if it's a complex question only.\n\n"
             "Context: {context}"
         )
 

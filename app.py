@@ -234,9 +234,13 @@ with st.sidebar:
                             )
                         st.success(f"✅ Your API key initiated: {openrouter_model}")
                 else:
-                    is_streamlit = is_streamlit_cloud()
-                    if is_streamlit and llm_type == "Local LLM":
-                        st.error("❌ Git clone and run repo locally to use Local LLMs")
+                    if llm_type == "Local LLM":
+                        try:
+                            is_streamlit = st.secrets.get("IS_STREAMLIT", "")
+                        except:
+                            is_streamlit = os.environ.get("IS_STREAMLIT", "")
+                        if is_streamlit:
+                            st.error("❌ Git clone and run repo locally to use Local LLMs")
                     else:
                         st.session_state.llm_type = "local"
                         st.session_state.local_model = local_model
