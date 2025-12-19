@@ -121,7 +121,7 @@ class BaseRAG:
         self.vectorstore = Chroma.from_documents(
             documents=splits,
             embedding=self.embeddings,
-            persist_directory="./chroma_db"
+            persist_directory="/tmp/chroma_db"
         )
         
         self.log(f"✓ Vector store created")
@@ -172,10 +172,10 @@ class BaseRAG:
     
     def load_existing_vectorstore(self):
         """Load existing vector store"""
-        if os.path.exists("./chroma_db"):
+        if os.path.exists("/tmp/chroma_db"):
             self.log("Loading existing vector store...")
             self.vectorstore = Chroma(
-                persist_directory="./chroma_db",
+                persist_directory="/tmp/chroma_db",
                 embedding_function=self.embeddings
             )
             self.log("✓ Vector store loaded")
@@ -198,9 +198,9 @@ class BaseRAG:
             self.qa_chain = None
 
 
-        if os.path.exists("./chroma_db"):
+        if os.path.exists("/tmp/chroma_db"):
             try:
-                shutil.rmtree("./chroma_db")
+                shutil.rmtree("/tmp/chroma_db")
                 self.log("✓ Vector database cleared")
                 return True
             except Exception as e:

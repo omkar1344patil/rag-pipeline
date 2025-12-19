@@ -94,7 +94,7 @@ with st.sidebar:
         
         st.divider()
         
-        if os.path.exists("./chroma_db"):
+        if os.path.exists("/tmp/chroma_db"):
             st.info("📊 Vector database active")
             if st.button("🗑️ Clear Database", use_container_width=True):
                 if st.session_state.rag:
@@ -110,8 +110,8 @@ with st.sidebar:
                 else:
                     # Fallback if no RAG instance
                     import shutil
-                    if os.path.exists("./chroma_db"):
-                        shutil.rmtree("./chroma_db")
+                    if os.path.exists("/tmp/chroma_db"):
+                        shutil.rmtree("/tmp/chroma_db")
                         st.session_state.documents_loaded = False
                         st.session_state.chat_history = []
                         st.rerun()
@@ -252,7 +252,7 @@ with st.sidebar:
                             )
                         st.success(f"✅ Local: {local_model}")
 
-                    if os.path.exists("./chroma_db"):
+                    if os.path.exists("/tmp/chroma_db"):
                         st.session_state.rag.load_existing_vectorstore()
                         st.session_state.rag.setup_qa_chain(k=k_docs)
                         st.session_state.documents_loaded = True
