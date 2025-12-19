@@ -1,174 +1,271 @@
+"""
+Streamlit UI for RAG System
+"""
 import streamlit as st
 import os
 import shutil
-# from rag_pipeline_copy import LocalRAG
-from upgraded_rag_pipeline import LocalRAG
+from upgraded_rag_pipeline import OpenRouterRAG, LocalRAG
+import time
 
-# Page config
+
 st.set_page_config(
-    page_title="Local RAG",
-    page_icon="🤖",
+    page_title="RAG Pipeline",
+    page_icon="🔍",
     layout="wide"
 )
 
-# Initialize session state
+
 if 'rag' not in st.session_state:
-    st.session_state.rag = LocalRAG(debug=True)
+    st.session_state.rag = None
     st.session_state.documents_loaded = False
     st.session_state.chat_history = []
+    st.session_state.llm_type = "openrouter"
+    st.session_state.openrouter_api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    st.session_state.openrouter_model = "google/gemma-3-27b-it:free"
+    st.session_state.local_model = "phi3:mini"
+    st.session_state.k_docs = 3
 
-# Sidebar for data sources
+
 with st.sidebar:
-    st.title("🤖 Local RAG")
+    st.markdown("# 🔍 RAG Pipeline")
     
-    tab1, tab2, tab3 = st.tabs(["Data Sources", "Settings", "About"])
+    tab1, tab2, tab3 = st.tabs(["📁 Data", "⚙️ Settings", "ℹ️ Info"])
     
     with tab1:
-        st.header("Directly import your data")
-        st.caption("Convert your data into embeddings for utilization during chat")
+        st.header("Document Management")
         
-        # File upload section
-        st.subheader("📁 Local Files")
+        # File upload
         uploaded_files = st.file_uploader(
-            "Select Files",
-            type=['pdf', 'txt', 'csv', 'docx', 'md'],
+            "Upload Documents",
+            type=['pdf', 'txt', 'md', 'csv'],
             accept_multiple_files=True,
-            help="Limit 200MB per file • CSV, DOCX, EPUB, IPYNB, JSON, MD, PDF, PPT, PPTX, TXT"
+            help="Upload documents to index"
         )
         
         if uploaded_files:
-            if st.button("Process Files", type="primary"):
+            if st.button("🚀 Process Documents", type="primary", use_container_width=True):
                 with st.spinner("Processing documents..."):
-                    # Save uploaded files temporarily
-                    temp_dir = "./temp_uploads"
-                    os.makedirs(temp_dir, exist_ok=True)
-                    
+                    os.makedirs("./uploads", exist_ok=True)
                     file_paths = []
+                    
                     for uploaded_file in uploaded_files:
-                        file_path = os.path.join(temp_dir, uploaded_file.name)
+                        file_path = os.path.join("./uploads", uploaded_file.name)
                         with open(file_path, "wb") as f:
                             f.write(uploaded_file.getbuffer())
                         file_paths.append(file_path)
                     
-                    # Process documents
                     try:
-                        docs = st.session_state.rag.load_documents(file_paths)
-                        st.session_state.rag.create_vectorstore(docs)
-                        st.session_state.rag.setup_qa_chain(k=3)
-                        st.session_state.documents_loaded = True
-                        st.success(f"✅ Processed {len(uploaded_files)} files!")
+                        if st.session_state.rag is None:
+                            st.error("⚠️ Please configure LLM settings first!")
+                        else:
+                            docs = st.session_state.rag.load_documents(file_paths)
+                            st.session_state.rag.create_vectorstore(docs)
+                            st.session_state.rag.setup_qa_chain(k=st.session_state.k_docs)
+                            st.session_state.documents_loaded = True
+                            st.success(f"✅ Processed {len(uploaded_files)} files!")
                     except Exception as e:
-                        st.error(f"Error processing files: {str(e)}")
+                        st.error(f"Error: {str(e)}")
                     finally:
-                        # Cleanup temp files
-                        shutil.rmtree(temp_dir, ignore_errors=True)
+                        shutil.rmtree("./uploads", ignore_errors=True)
         
         st.divider()
         
-        # Clear database button
-        if st.button("🗑️ Clear Vector Database", type="secondary"):
-            if os.path.exists("./chroma_db"):
-                shutil.rmtree("./chroma_db")
-                st.session_state.rag = LocalRAG()
-                st.session_state.documents_loaded = False
-                st.session_state.chat_history = []
-                st.success("Database cleared!")
-                st.rerun()
-        
-        # Show current status
         if os.path.exists("./chroma_db"):
-            st.info("📊 Vector database exists")
-        else:
-            st.warning("📊 No vector database found")
+            st.info("📊 Vector database active")
+            if st.button("🗑️ Clear Database", use_container_width=True):
+                if st.session_state.rag:
+                    success = st.session_state.rag.clear_vectorstore()
+                    if success:
+                        st.session_state.documents_loaded = False
+                        st.session_state.chat_history = []
+                        st.success("✅ Database cleared!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to clear database")
+                else:
+                    # Fallback if no RAG instance
+                    import shutil
+                    if os.path.exists("./chroma_db"):
+                        shutil.rmtree("./chroma_db")
+                        st.session_state.documents_loaded = False
+                        st.session_state.chat_history = []
+                        st.rerun()
+                    else:
+                        st.warning("📊 No vector database")
     
     with tab2:
-        st.header("⚙️ Settings")
+        st.header("⚙️ LLM Settings")
         
-        # Model settings
-        model = st.selectbox(
-            "Model",
-            ["phi3:mini", "llama2", "mistral"],
-            help="Select the Ollama model to use"
+        # LLM Type Selection
+        llm_type = st.radio(
+            "Select LLM Provider",
+            ["Personal API", "Local LLM"],
+            index=0 if st.session_state.llm_type == "openrouter" else 1
         )
         
-        temperature = st.slider(
-            "Temperature",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.2,
-            step=0.1,
-            help="Higher values make output more random"
-        )
+        st.divider()
+        
+        # OpenRouter Settings
+        if llm_type == "Personal API":
+            st.subheader("🌐 Personal API Key Configuration")
+            
+            openrouter_api_key = st.text_input(
+                "Enter your API Key",
+                value=st.session_state.openrouter_api_key,
+                type="password",
+                help="Input your API key here"
+            )
+            
+            openrouter_model = st.text_input(
+                "Model Name (optional)",
+                value=st.session_state.openrouter_model,
+                help="Example: google/gemma-3-27b-it:free"
+            )
+            
+            
+        # Local LLM Settings
+        else:
+            st.subheader("🖥️ Local LLM Configuration")
+            
+            local_models = [
+                "phi3:mini",
+                "gemma2:7b", 
+                "llama3.2:3b",
+                "mistral:7b",
+                "qwen2.5:7b"
+            ]
+            
+            model_selection = st.selectbox(
+                "Select Model",
+                options=local_models + ["Custom..."],
+                index=local_models.index(st.session_state.local_model) if st.session_state.local_model in local_models else 0
+            )
+            
+            if model_selection == "Custom...":
+                local_model = st.text_input(
+                    "Custom Model Name",
+                    value=st.session_state.local_model if st.session_state.local_model not in local_models else "",
+                    placeholder="model:tag"
+                )
+            else:
+                local_model = model_selection
+            
+            st.caption("💡 Run: `ollama pull model-name`")
+        
+        st.divider()
+        
+        # Retrieval Settings
+        st.subheader("📊 Retrieval Settings")
         
         k_docs = st.slider(
-            "Number of retrieved documents",
+            "Documents to Retrieve",
             min_value=1,
             max_value=10,
-            value=3,
-            help="How many document chunks to retrieve"
+            value=st.session_state.k_docs
         )
         
-        if st.button("Apply Settings"):
-            st.session_state.rag = LocalRAG(model_name=model)
-            st.session_state.rag.llm.temperature = temperature
-            if st.session_state.documents_loaded:
-                st.session_state.rag.load_existing_vectorstore()
-                st.session_state.rag.setup_qa_chain(k=k_docs)
-            st.success("Settings applied!")
+        st.divider()
+        
+        # Apply Button
+        if st.button("✅ Apply Settings", type="primary", use_container_width=True):
+            try:
+                st.session_state.k_docs = k_docs
+                
+                if llm_type == "Personal API":
+                    if not openrouter_api_key:
+                        st.error("❌ API key required")
+                    else:
+                        st.session_state.llm_type = "openrouter"
+                        st.session_state.openrouter_api_key = openrouter_api_key
+                        st.session_state.openrouter_model = openrouter_model
+                        
+                        with st.spinner("Initializing your API Key..."):
+                            st.session_state.rag = OpenRouterRAG(
+                                model_name=openrouter_model,
+                                api_key=openrouter_api_key,
+                                debug=False
+                            )
+                        st.success(f"✅ Your API key initiated: {openrouter_model}")
+                else:
+                    st.session_state.llm_type = "local"
+                    st.session_state.local_model = local_model
+                    
+                    with st.spinner(f"Initializing {local_model}..."):
+                        st.session_state.rag = LocalRAG(
+                            model_name=local_model,
+                            debug=False
+                        )
+                    st.success(f"✅ Local: {local_model}")
+                
+                # Load existing vectorstore
+                if os.path.exists("./chroma_db"):
+                    st.session_state.rag.load_existing_vectorstore()
+                    st.session_state.rag.setup_qa_chain(k=k_docs)
+                    st.session_state.documents_loaded = True
+                
+            except Exception as e:
+                st.error(f"❌ {str(e)}")
     
     with tab3:
         st.header("ℹ️ About")
         st.markdown("""
-        **Local RAG Pipeline**
+        **RAG Pipeline**
         
-        Built with:
-        - 🦜 LangChain
-        - 🤖 Ollama (Phi-3-mini)
-        - 📊 ChromaDB
-        - 🎨 Streamlit
-        
-        Features:
-        - Upload multiple documents
-        - Persistent vector storage
-        - Multi-turn conversations
-        - Source attribution
+        Retrieval-Augmented Generation with:
+        - OpenRouter API
+        - Local Ollama models
+        - ChromaDB vector store
+        - Multi-turn chat
         """)
+        
+        if st.session_state.rag:
+            st.divider()
+            st.caption("**Current Config:**")
+            st.caption(f"Type: {st.session_state.llm_type}")
+            if st.session_state.llm_type == "openrouter":
+                st.caption(f"Model: {st.session_state.openrouter_model}")
+            else:
+                st.caption(f"Model: {st.session_state.local_model}")
+            st.caption(f"Retrieval: k={st.session_state.k_docs}")
 
-# Main chat interface
-st.title("💬 Chat with your documents")
+# Main
+st.markdown("# RAG Pipeline")
+st.markdown("### Import your data and chat with your documents")
 
-# Display chat history
-for message in st.session_state.chat_history:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        if "sources" in message and message["sources"]:
-            with st.expander("📚 View Sources"):
-                for i, source in enumerate(message["sources"], 1):
-                    st.caption(f"**Source {i}:** {source.metadata.get('source', 'Unknown')}")
-                    st.text(source.page_content[:300] + "...")
+if st.session_state.rag is None:
+    st.info("👈 Configure LLM settings in sidebar")
+    st.stop()
+
+# Chat history
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+        
+        if "sources" in msg and msg["sources"]:
+            with st.expander("📚 Sources"):
+                for i, src in enumerate(msg["sources"], 1):
+                    st.caption(f"**[{i}]** {src.metadata.get('source', 'Unknown')}")
+                    st.text(src.page_content[:200] + "...")
 
 # Chat input
-if prompt := st.chat_input("How can I help?", disabled=not st.session_state.documents_loaded):
-    # Add user message
+if prompt := st.chat_input("Ask about your documents...", disabled=not st.session_state.documents_loaded):
     st.session_state.chat_history.append({"role": "user", "content": prompt})
     
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Generate response
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
                 response = st.session_state.rag.query(prompt)
                 st.markdown(response["answer"])
                 
-                # Show sources
-                with st.expander("📚 View Sources"):
-                    for i, source in enumerate(response["sources"], 1):
-                        st.caption(f"**Source {i}:** {source.metadata.get('source', 'Unknown')}")
-                        st.text(source.page_content[:300] + "...")
+                with st.expander("📚 Sources"):
+                    for i, src in enumerate(response["sources"], 1):
+                        st.caption(f"**[{i}]** {src.metadata.get('source', 'Unknown')}")
+                        st.text(src.page_content[:200] + "...")
                 
-                # Add to chat history
                 st.session_state.chat_history.append({
                     "role": "assistant",
                     "content": response["answer"],
@@ -177,6 +274,5 @@ if prompt := st.chat_input("How can I help?", disabled=not st.session_state.docu
             except Exception as e:
                 st.error(f"Error: {str(e)}")
 
-# Show message if no documents loaded
 if not st.session_state.documents_loaded:
-    st.info("👈 Upload documents from the sidebar to get started!")
+    st.info("👈 Upload documents to start")
