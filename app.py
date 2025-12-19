@@ -6,7 +6,7 @@ import os
 import shutil
 from main_rag_pipeline import OpenRouterRAG, LocalRAG
 import time
-
+from datetime import datetime, timezone
 
 st.set_page_config(
     page_title="RAG Pipeline",
@@ -24,6 +24,30 @@ if 'rag' not in st.session_state:
     st.session_state.openrouter_model = "google/gemma-3-27b-it:free"
     st.session_state.local_model = "phi3:mini"
     st.session_state.k_docs = 3
+    st.session_state.using_default_key = False
+    st.session_state.request_count = 0
+    st.session_state.last_reset_date = datetime.now(timezone.utc).date()
+
+def check_rate_limit():
+    """Check and reset rate limit based on UTC midnight"""
+    current_date = datetime.now(timezone.utc).date()
+    
+    if current_date > st.session_state.last_reset_date:
+        st.session_state.request_count = 0
+        st.session_state.last_reset_date = current_date
+    
+    if st.session_state.using_default_key and st.session_state.request_count >= 25:
+        return False
+    return True
+
+def increment_request_count():
+    """Increment request count if using default key"""
+    if st.session_state.using_default_key:
+        st.session_state.request_count += 1
+
+def is_vercel_deployment():
+    """Check if running on Vercel"""
+    return os.environ.get("VERCEL_ENV") is not None
 
 
 with st.sidebar:
@@ -97,25 +121,53 @@ with st.sidebar:
     with tab2:
         st.header("⚙️ LLM Settings")
         
-        # LLM Type Selection
+        is_vercel = is_vercel_deployment()
+        
         llm_type = st.radio(
             "Select LLM Provider",
             ["Personal API", "Local LLM"],
-            index=0 if st.session_state.llm_type == "openrouter" else 1
+            index=0 if st.session_state.llm_type == "openrouter" else 1,
+            disabled=is_vercel,
+            help="Local LLM unavailable on hosted version" if is_vercel else None
         )
+        
+        if is_vercel and llm_type == "Local LLM":
+            st.info("ℹ️ Clone this repo to use local LLMs")
         
         st.divider()
         
-        # OpenRouter Settings
         if llm_type == "Personal API":
             st.subheader("🌐 Personal API Key Configuration")
             
-            openrouter_api_key = st.text_input(
-                "Enter your API Key",
-                value=st.session_state.openrouter_api_key,
-                type="password",
-                help="Input your API key here"
+            api_key_option = st.selectbox(
+                "API Key",
+                ["Default Key", "Use Own API Key"],
+                help="Default key has 25 requests/day limit"
             )
+            
+            if api_key_option == "Default Key":
+                default_key = os.environ.get("DEFAULT_OPENROUTER_KEY", "")
+                if not default_key:
+                    st.error("⚠️ Default key not configured")
+                    openrouter_api_key = ""
+                    st.session_state.using_default_key = False
+                else:
+                    openrouter_api_key = default_key
+                    st.session_state.using_default_key = True
+                    
+                    if st.session_state.request_count > 0:
+                        st.caption(f"Requests used today: {st.session_state.request_count}/25")
+                    
+                    if st.session_state.request_count >= 25:
+                        st.error("⚠️ Daily limit reached. Resets at midnight UTC.")
+            else:
+                openrouter_api_key = st.text_input(
+                    "Enter your API Key",
+                    value="" if st.session_state.using_default_key else st.session_state.openrouter_api_key,
+                    type="password",
+                    help="Input your API key here"
+                )
+                st.session_state.using_default_key = False
             
             openrouter_model = st.text_input(
                 "Model Name (optional)",
@@ -123,8 +175,6 @@ with st.sidebar:
                 help="Example: google/gemma-3-27b-it:free"
             )
             
-            
-        # Local LLM Settings
         else:
             st.subheader("🖥️ Local LLM Configuration")
             
@@ -139,14 +189,16 @@ with st.sidebar:
             model_selection = st.selectbox(
                 "Select Model",
                 options=local_models + ["Custom..."],
-                index=local_models.index(st.session_state.local_model) if st.session_state.local_model in local_models else 0
+                index=local_models.index(st.session_state.local_model) if st.session_state.local_model in local_models else 0,
+                disabled=is_vercel
             )
             
             if model_selection == "Custom...":
                 local_model = st.text_input(
                     "Custom Model Name",
                     value=st.session_state.local_model if st.session_state.local_model not in local_models else "",
-                    placeholder="model:tag"
+                    placeholder="model:tag",
+                    disabled=is_vercel
                 )
             else:
                 local_model = model_selection
@@ -155,7 +207,6 @@ with st.sidebar:
         
         st.divider()
         
-        # Retrieval Settings
         st.subheader("📊 Retrieval Settings")
         
         k_docs = st.slider(
@@ -167,7 +218,6 @@ with st.sidebar:
         
         st.divider()
         
-        # Apply Button
         if st.button("✅ Apply Settings", type="primary", use_container_width=True):
             try:
                 st.session_state.k_docs = k_docs
@@ -188,22 +238,25 @@ with st.sidebar:
                             )
                         st.success(f"✅ Your API key initiated: {openrouter_model}")
                 else:
-                    st.session_state.llm_type = "local"
-                    st.session_state.local_model = local_model
-                    
-                    with st.spinner(f"Initializing {local_model}..."):
-                        st.session_state.rag = LocalRAG(
-                            model_name=local_model,
-                            debug=False
-                        )
-                    st.success(f"✅ Local: {local_model}")
-                
-                # Load existing vectorstore
-                if os.path.exists("./chroma_db"):
-                    st.session_state.rag.load_existing_vectorstore()
-                    st.session_state.rag.setup_qa_chain(k=k_docs)
-                    st.session_state.documents_loaded = True
-                
+                    if is_vercel:
+                        st.error("❌ Local LLM not available on hosted version")
+                    else:
+                        
+                        st.session_state.llm_type = "local"
+                        st.session_state.local_model = local_model
+
+                        with st.spinner(f"Initializing {local_model}..."):
+                            st.session_state.rag = LocalRAG(
+                                model_name=local_model,
+                                debug=False
+                            )
+                        st.success(f"✅ Local: {local_model}")
+
+                    if os.path.exists("./chroma_db"):
+                        st.session_state.rag.load_existing_vectorstore()
+                        st.session_state.rag.setup_qa_chain(k=k_docs)
+                        st.session_state.documents_loaded = True
+
             except Exception as e:
                 st.error(f"❌ {str(e)}")
     
@@ -250,6 +303,10 @@ for msg in st.session_state.chat_history:
 
 # Chat input
 if prompt := st.chat_input("Ask about your documents...", disabled=not st.session_state.documents_loaded):
+    if not check_rate_limit():
+        st.error("⚠️ Daily request limit reached (25/25). Resets at midnight UTC. Please use your own API key.")
+        st.stop()
+    
     st.session_state.chat_history.append({"role": "user", "content": prompt})
     
     with st.chat_message("user"):
@@ -259,6 +316,8 @@ if prompt := st.chat_input("Ask about your documents...", disabled=not st.sessio
         with st.spinner("Thinking..."):
             try:
                 response = st.session_state.rag.query(prompt)
+                increment_request_count()
+                
                 st.markdown(response["answer"])
                 
                 with st.expander("📚 Sources"):
