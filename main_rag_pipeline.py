@@ -234,6 +234,7 @@ class OpenRouterRAG(BaseRAG):
             max_tokens=2000
         )
         
+        
         self.log(f"✓ OpenRouter connected: {model_name}")
         self.log("=" * 60)
 
