@@ -2,7 +2,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.llms import Ollama
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain.chains import RetrievalQA
 from langchain_community.document_loaders import TextLoader, PyPDFLoader
 from langchain_core.language_models.llms import LLM
 from typing import Optional, List, Any
