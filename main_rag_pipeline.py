@@ -1,10 +1,14 @@
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain_community.llms import Ollama
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+from langchain_ollama import OllamaLLM
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.chains import RetrievalQA
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.document_loaders import TextLoader, PyPDFLoader
 from langchain_core.language_models.llms import LLM
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
 from typing import Optional, List, Any
 import requests
 import json
@@ -72,7 +76,6 @@ class BaseRAG:
         self.vectorstore = None
         self.qa_chain = None
         
-        # Initialize embedding model
         self.log("Loading embedding model...")
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
@@ -106,7 +109,6 @@ class BaseRAG:
     def create_vectorstore(self, documents, chunk_size=1000, chunk_overlap=200):
         """Split documents and create vector store"""
         
-        # Split documents
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -128,33 +130,43 @@ class BaseRAG:
         """Setup QA chain with retrieval"""
         if self.vectorstore is None:
             raise ValueError("Vector store not initialized")
-        
+
         self.log(f"Setting up QA chain (k={k})...")
-        
-        retriever = self.vectorstore.as_retriever(
+
+        self.retriever = self.vectorstore.as_retriever(
             search_type="similarity",
             search_kwargs={"k": k}
         )
-        
-        self.qa_chain = RetrievalQA.from_chain_type(
-            llm=self.llm,
-            chain_type="stuff",
-            retriever=retriever,
-            return_source_documents=True
+
+        system_prompt = (
+            "Use the given context to answer the question. "
+            "If you don't know the answer, say you don't know. "
+            "Be concise and accurate.\n\n"
+            "Context: {context}"
         )
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", "{input}"),
+        ])
+
+        question_answer_chain = create_stuff_documents_chain(self.llm, prompt)
+        self.qa_chain = create_retrieval_chain(self.retriever, question_answer_chain)
+
+        self.log("✓ QA chain setup complete")
     
     def query(self, question):
         """Query the RAG system"""
         if self.qa_chain is None:
             raise ValueError("QA chain not setup")
-        
+
         self.log(f"Querying: '{question[:50]}...'")
-        
-        result = self.qa_chain.invoke({"query": question})
-        
+
+        result = self.qa_chain.invoke({"input": question})
+
         return {
-            "answer": result["result"],
-            "sources": result["source_documents"]
+            "answer": result["answer"],
+            "sources": result.get("context", [])
         }
     
     def load_existing_vectorstore(self):
@@ -207,14 +219,12 @@ class OpenRouterRAG(BaseRAG):
         self.log("INITIALIZING OPENROUTER RAG")
         self.log("=" * 60)
         
-        # Get API key
         if api_key is None:
             api_key = os.environ.get("OPENROUTER_API_KEY")
         
         if not api_key:
             raise ValueError("OpenRouter API key required")
         
-        # Initialize OpenRouter LLM
         self.log(f"Connecting to OpenRouter ({model_name})...")
         self.llm = OpenRouterLLM(
             model=model_name,
@@ -236,9 +246,8 @@ class LocalRAG(BaseRAG):
         self.log("INITIALIZING LOCAL RAG")
         self.log("=" * 60)
         
-        # Initialize Ollama LLM
         self.log(f"Connecting to Ollama ({model_name})...")
-        self.llm = Ollama(
+        self.llm = OllamaLLM(
             model=model_name,
             temperature=0.3
         )
