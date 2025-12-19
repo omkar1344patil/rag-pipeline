@@ -45,9 +45,9 @@ def increment_request_count():
     if st.session_state.using_default_key:
         st.session_state.request_count += 1
 
-def is_vercel_deployment():
-    """Check if running on Vercel"""
-    return os.environ.get("VERCEL_ENV") is not None
+def is_streamlit_cloud():
+    """Check if running on Streamlit Cloud"""
+    return os.environ.get("STREAMLIT_SHARING_MODE") is not None or os.environ.get("HOSTNAME", "").endswith(".streamlit.app")
 
 
 with st.sidebar:
@@ -121,17 +121,17 @@ with st.sidebar:
     with tab2:
         st.header("⚙️ LLM Settings")
         
-        is_vercel = is_vercel_deployment()
+        is_streamlit = is_streamlit_cloud()
         
         llm_type = st.radio(
             "Select LLM Provider",
             ["Personal API", "Local LLM"],
             index=0 if st.session_state.llm_type == "openrouter" else 1,
-            disabled=is_vercel,
-            help="Local LLM unavailable on hosted version" if is_vercel else None
+            disabled=is_streamlit,
+            help="Local LLM unavailable on hosted version" if is_streamlit else None
         )
         
-        if is_vercel and llm_type == "Local LLM":
+        if is_streamlit and llm_type == "Local LLM":
             st.info("ℹ️ Clone this repo to use local LLMs")
         
         st.divider()
@@ -146,7 +146,11 @@ with st.sidebar:
             )
             
             if api_key_option == "Default Key":
-                default_key = os.environ.get("DEFAULT_OPENROUTER_KEY", "")
+                try:
+                    default_key = st.secrets.get("DEFAULT_OPENROUTER_KEY", "")
+                except:
+                    default_key = os.environ.get("DEFAULT_OPENROUTER_KEY", "")
+                
                 if not default_key:
                     st.error("⚠️ Default key not configured")
                     openrouter_api_key = ""
@@ -190,7 +194,7 @@ with st.sidebar:
                 "Select Model",
                 options=local_models + ["Custom..."],
                 index=local_models.index(st.session_state.local_model) if st.session_state.local_model in local_models else 0,
-                disabled=is_vercel
+                disabled=is_streamlit
             )
             
             if model_selection == "Custom...":
@@ -198,7 +202,7 @@ with st.sidebar:
                     "Custom Model Name",
                     value=st.session_state.local_model if st.session_state.local_model not in local_models else "",
                     placeholder="model:tag",
-                    disabled=is_vercel
+                    disabled=is_streamlit
                 )
             else:
                 local_model = model_selection
@@ -238,7 +242,7 @@ with st.sidebar:
                             )
                         st.success(f"✅ Your API key initiated: {openrouter_model}")
                 else:
-                    if is_vercel:
+                    if is_streamlit:
                         st.error("❌ Local LLM not available on hosted version")
                     else:
                         
