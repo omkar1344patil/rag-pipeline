@@ -47,7 +47,7 @@ def increment_request_count():
 
 def is_streamlit_cloud():
     """Check if running on Streamlit Cloud"""
-    return os.environ.get("STREAMLIT_SHARING_MODE") is not None or os.environ.get("HOSTNAME", "").endswith(".streamlit.app")
+    return os.environ.get("IS_STREAMLIT")
 
 
 with st.sidebar:
@@ -121,18 +121,12 @@ with st.sidebar:
     with tab2:
         st.header("⚙️ LLM Settings")
         
-        is_streamlit = is_streamlit_cloud()
-        
         llm_type = st.radio(
             "Select LLM Provider",
             ["Personal API", "Local LLM"],
-            index=0 if st.session_state.llm_type == "openrouter" else 1,
-            disabled=is_streamlit,
-            help="Local LLM unavailable on hosted version" if is_streamlit else None
+            index=0 if st.session_state.llm_type == "openrouter" else 1
         )
         
-        if is_streamlit and llm_type == "Local LLM":
-            st.info("ℹ️ Clone this repo to use local LLMs")
         
         st.divider()
         
@@ -193,16 +187,14 @@ with st.sidebar:
             model_selection = st.selectbox(
                 "Select Model",
                 options=local_models + ["Custom..."],
-                index=local_models.index(st.session_state.local_model) if st.session_state.local_model in local_models else 0,
-                disabled=is_streamlit
+                index=local_models.index(st.session_state.local_model) if st.session_state.local_model in local_models else 0
             )
             
             if model_selection == "Custom...":
                 local_model = st.text_input(
                     "Custom Model Name",
                     value=st.session_state.local_model if st.session_state.local_model not in local_models else "",
-                    placeholder="model:tag",
-                    disabled=is_streamlit
+                    placeholder="model:tag"
                 )
             else:
                 local_model = model_selection
@@ -242,10 +234,9 @@ with st.sidebar:
                             )
                         st.success(f"✅ Your API key initiated: {openrouter_model}")
                 else:
-                    if is_streamlit:
-                        st.error("❌ Local LLM not available on hosted version")
+                    if IS_STREAMLIT and llm_type == "Local LLM":
+                        st.error("❌ Git clone and run repo locally to use Local LLMs")
                     else:
-                        
                         st.session_state.llm_type = "local"
                         st.session_state.local_model = local_model
 
