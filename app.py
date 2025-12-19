@@ -4,7 +4,7 @@ Streamlit UI for RAG System
 import streamlit as st
 import os
 import shutil
-from upgraded_rag_pipeline import OpenRouterRAG, LocalRAG
+from main_rag_pipeline import OpenRouterRAG, LocalRAG
 import time
 
 
