@@ -107,24 +107,21 @@ class BaseRAG:
         return documents
     
     def create_vectorstore(self, documents, chunk_size=1000, chunk_overlap=200):
-        """Split documents and create vector store"""
-        
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             separators=["\n\n", "\n", " ", ""]
         )
-        
+
         splits = text_splitter.split_documents(documents)
         self.log(f"  Split into {len(splits)} chunks")
-        
+
         self.vectorstore = Chroma.from_documents(
             documents=splits,
-            embedding=self.embeddings,
-            persist_directory="/tmp/chroma_db"
+            embedding=self.embeddings
         )
-        
-        self.log(f"✓ Vector store created")
+
+        self.log(f"✓ Vector store created (in-memory)")
     
     def setup_qa_chain(self, k=5):
         """Setup QA chain with retrieval"""
@@ -171,15 +168,7 @@ class BaseRAG:
         }
     
     def load_existing_vectorstore(self):
-        """Load existing vector store"""
-        if os.path.exists("/tmp/chroma_db"):
-            self.log("Loading existing vector store...")
-            self.vectorstore = Chroma(
-                persist_directory="/tmp/chroma_db",
-                embedding_function=self.embeddings
-            )
-            self.log("✓ Vector store loaded")
-            return True
+        self.log("No persistent storage on Streamlit Cloud")
         return False
     
     def clear_vectorstore(self):
@@ -233,7 +222,7 @@ class OpenRouterRAG(BaseRAG):
             temperature=0.3,
             max_tokens=2000
         )
-        
+
         
         self.log(f"✓ OpenRouter connected: {model_name}")
         self.log("=" * 60)
