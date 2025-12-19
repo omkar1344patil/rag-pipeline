@@ -156,7 +156,7 @@ class BaseRAG:
     def query(self, question):
         """Query the RAG system"""
         if self.qa_chain is None:
-            raise ValueError("QA chain not setup")
+            raise ValueError("Please refresh app and select Personal API key again")
 
         self.log(f"Querying: '{question[:50]}...'")
 
